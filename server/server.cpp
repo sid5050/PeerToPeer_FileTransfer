@@ -10,7 +10,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <fstream>
-#define PORT 8885
+#define PORT 8880
 using namespace std;
 string userInfo = "userinfo.txt";
 
@@ -60,6 +60,7 @@ void *newAccount(void *userCred) {
 	string uname, pass, tmp;
 	for(i = pos+1;i < signUpData.size();i++) {
 		if(signUpData[i] == ' ') {
+			i++;
 			uname = tmp;
 			break;
 		}
@@ -69,9 +70,6 @@ void *newAccount(void *userCred) {
 	uname = tmp;
 	tmp = "";
 	for(;i < signUpData.size();i++) {
-		if(signUpData[i] == ' ') {
-			pass = tmp;
-		}
 		tmp += signUpData[i];
 	}
 	pass = tmp;
@@ -134,6 +132,7 @@ void *loginUser(void *userCred) {
 	for(i = pos+1;i < signUpData.size();i++) {
 		if(signUpData[i] == ' ') {
 			uname = tmp;
+			i++;
 			break;
 		}
 		tmp += signUpData[i];
@@ -142,15 +141,13 @@ void *loginUser(void *userCred) {
 	uname = tmp;
 	tmp = "";
 	for(;i < signUpData.size();i++) {
-		if(signUpData[i] == ' ') {
-			pass = tmp;
-		}
 		tmp += signUpData[i];
 	}
 	pass = tmp;
 
 	cout << "Tracker in LoginUser Function and has uname and passwd as: " << uname << " " << pass << endl;
-
+	for(auto itr = appUsers.begin();itr != appUsers.end();itr++)
+		cout << itr->first << "---" << itr->second << endl;
 
 	char reply[1024];
 	memset(&reply[0], 0, sizeof(reply));
@@ -205,6 +202,7 @@ void *createGrp(void *grpData) {
 	string grpID, admin, tmp;
 	for(i = pos+1;i < Data.size();i++) {
 		if(Data[i] == ' ') {
+			i++;
 			grpID = tmp;
 			break;
 		}
@@ -214,9 +212,6 @@ void *createGrp(void *grpData) {
 	// uname = tmp;
 	tmp = "";
 	for(;i < Data.size();i++) {
-		if(Data[i] == ' ') {
-			admin = tmp;
-		}
 		tmp += Data[i];
 	}
 	admin = tmp;
@@ -314,6 +309,7 @@ void *joinGrp(void *grpData) {
 	string grpID, user, tmp;
 	for(i = pos+1;i < Data.size();i++) {
 		if(Data[i] == ' ') {
+			i++;
 			grpID = tmp;
 			break;
 		}
@@ -323,9 +319,6 @@ void *joinGrp(void *grpData) {
 	// uname = tmp;
 	tmp = "";
 	for(;i < Data.size();i++) {
-		if(Data[i] == ' ') {
-			user = tmp;
-		}
 		tmp += Data[i];
 	}
 	user = tmp;
@@ -347,7 +340,7 @@ void *joinGrp(void *grpData) {
 		vector<string> usrgrps = grpOwner[user];
 		for(int i = 0;i < usrgrps.size();i++) {
 			if(usrgrps[i] == grpID) {
-				string msg = "GrpID already exists!!\n";
+				string msg = "You are a group member(admin)!!\n";
 				strcpy(reply, msg.c_str());
 				send(sockfd, reply, strlen(reply), 0);
 				pthread_exit(NULL);
@@ -378,7 +371,8 @@ void *joinGrp(void *grpData) {
 		string msg = "Group Join Request Sent Successfully!!\n";
 		strcpy(reply, msg.c_str());
 		send(sockfd, reply, strlen(reply), 0);
-		availableGroups.insert(grpID);
+		// availableGroups.insert(grpID);
+		grpRequestList[grpID].push_back(user);
 	} else {
 		string msg = "grouprequest File Handling Error!!\n";
 		strcpy(reply, msg.c_str());
@@ -402,6 +396,7 @@ void *listGrpRequest(void *grpData) {
 	string grpID, user, tmp;
 	for(i = pos+1;i < Data.size();i++) {
 		if(Data[i] == ' ') {
+			i++;
 			grpID = tmp;
 			break;
 		}
@@ -411,9 +406,6 @@ void *listGrpRequest(void *grpData) {
 	// uname = tmp;
 	tmp = "";
 	for(;i < Data.size();i++) {
-		if(Data[i] == ' ') {
-			user = tmp;
-		}
 		tmp += Data[i];
 	}
 	user = tmp;
@@ -462,6 +454,168 @@ void *listGrpRequest(void *grpData) {
 
 
 
+void *acceptGrpRequest(void *grpData) {
+	string Data = (char *)grpData;
+	int pos = Data.find(" ");
+	int i;
+	int sockfd = stoi(Data.substr(0, pos));
+
+
+	string grpID, user, admin, tmp;
+	for(i = pos+1;i < Data.size();i++) {
+		if(Data[i] == ' ') {
+			grpID = tmp;
+			i++;
+			break;
+		}
+		tmp += Data[i];
+	}
+	
+	// uname = tmp;
+	tmp = "";
+	for(;i < Data.size();i++) {
+		if(Data[i] == ' ') {
+			user = tmp;
+			i++;
+			break;
+		}
+		tmp += Data[i];
+	}
+	admin = Data.substr(i);
+
+	cout << "Tracker in acceptGrpRequest Function and has admin, grpid and user as: " << admin << " " << grpID << " "<< user << endl;
+	char reply[1024];
+	memset(&reply[0], 0, sizeof(reply));
+
+	// auto itr = find(availableGroups.begin(), availableGroups.end(), grpID);
+	if(availableGroups.find(grpID) == availableGroups.end()) {
+		string msg = "GrpID does not exist!!\n";
+		strcpy(reply, msg.c_str());
+		send(sockfd, reply, strlen(reply), 0);
+		pthread_exit(NULL);
+		return NULL;
+	}
+
+	if(grpOwner.find(admin) != grpOwner.end()) {
+		cout << "Inside" << endl;
+		vector<string> usrgrps = grpOwner[admin];
+		for(int i = 0;i < usrgrps.size();i++) {
+			cout << usrgrps[i] << endl;
+			if(usrgrps[i] == grpID) {
+				vector<string> list = grpRequestList[grpID];
+				bool flag = 0;
+				for(string ele : list) {
+					if(ele == user) {
+						flag = 1;
+						break;
+					}
+				}
+				string msg;
+				if(!flag)
+					msg = user + " is already a member of Group: " + grpID + "\n";
+				else {
+					msg = user + " added to Group: " + grpID + "\n";
+
+					for(int i = 0;i < grpRequestList[grpID].size();i++) {
+						if(grpRequestList[grpID][i] == user) {
+							grpRequestList[grpID].erase(grpRequestList[grpID].begin()+i);
+							break;
+						}
+					}
+
+					if (remove("grouprequest.dat") == 0){
+				    	printf("Deleted successfully\n");
+
+				    
+				    	FILE *datafile;
+				  		datafile = fopen("grouprequest.dat", "a");
+				  		for(int i = 0;i < grpRequestList[grpID].size();i++) {
+				  			struct grpRequest gr;
+							strcpy(gr.grpID, grpID.c_str());
+							strcpy(gr.usrname, grpRequestList[grpID][i].c_str());
+							// printf("GR-->%s --- %s\n",gr.grpID, gr.usrname);
+
+					  		if(!datafile) {
+								cout << "Invalid grouprequest file" << endl;
+								exit(1);
+					   		}
+							fwrite(&gr, sizeof(struct grpRequest), 1, datafile);
+							if(fwrite == 0) {
+								string msg = "grouprequest File Handling Error!!\n";
+								// strcpy(reply, msg.c_str());
+								// send(sockfd, reply, strlen(reply), 0);
+								exit(1);
+							}
+						}
+						fclose(datafile);
+					}
+				   else{
+				      printf("Unable to delete grpRequest file");
+				      exit(1);
+				   }
+
+					grpMemberList[grpID].push_back(user);
+					struct grpMembers gm;
+					strcpy(gm.grpID, grpID.c_str());
+					strcpy(gm.member, user.c_str());
+					printf("GM-->%s --- %s\n",gm.grpID, gm.member);
+
+					FILE *datafile;
+					datafile = fopen("groupmember.dat", "a");
+					if(!datafile) {
+						cout << "Invalid groupmember file" << endl;
+						exit(1);
+					}
+					fwrite(&gm, sizeof(struct grpMembers), 1, datafile);
+					if(fwrite == 0) {
+						string msg = "groupmember File Handling Error!!\n";
+						strcpy(reply, msg.c_str());
+						send(sockfd, reply, strlen(reply), 0);	
+					}
+					fclose(datafile);
+				}
+				strcpy(reply, msg.c_str());
+				send(sockfd, reply, strlen(reply), 0);
+				pthread_exit(NULL);
+				return NULL;
+			}
+		}
+	}
+
+
+	string msg = admin + " is not an admin of group " + grpID + "\n";
+	strcpy(reply, msg.c_str());
+	send(sockfd, reply, strlen(reply), 0);
+	availableGroups.insert(grpID);
+	pthread_exit(NULL);
+	return NULL;
+
+}
+
+
+
+void *listAllGrps(void *sockData) {
+	string Data = (char *)sockData;
+	int sockfd = stoi(Data);
+
+
+	cout << "Tracker in listAllGrps Function " << endl;
+	char reply[1024];
+	memset(&reply[0], 0, sizeof(reply));
+
+	// auto itr = find(availableGroups.begin(), availableGroups.end(), grpID);
+	string msg = "Following Groups exists:\n";
+	for(auto itr = availableGroups.begin(); itr != availableGroups.end(); itr++) {
+		msg += (*itr) + "\n";
+	}
+	strcpy(reply, msg.c_str());
+	send(sockfd, reply, strlen(reply), 0);
+	pthread_exit(NULL);
+	return NULL;
+}
+
+
+
 
 
 void getData() {
@@ -498,7 +652,9 @@ void getData() {
     cout << "Grp Data is " << endl;
     for(auto itr = grpOwner.begin(); itr != grpOwner.end(); itr++) {
     	// cout << itr->first << " " << itr->second << endl;
-    	cout << "\nGroup Admin " << itr->first << endl;
+    	// if(grpOwner.find(" ved") != grpOwner.end())
+    	// 	cout << "YO" << endl;
+    	cout << "\nGroup Admin" << itr->first << endl;
     	vector<string> list = itr->second;
     	for(int i = 0;i < list.size();i++) {
     		cout << list[i] << " ";
@@ -610,8 +766,11 @@ int main(){
 		recv(newSocket, buffer, 1024, 0);
 
 		// cout << "Enter" << endl;
-		pthread_t createAccountThread, loginUserThread, createGrpThread, joinGrpThread, listRequestThread;
-		int createUser = 0, loginCheck = 0, createGrpCheck = 0, joinGrpCheck = 0, listRequestCheck = 0;
+		pthread_t createAccountThread, loginUserThread, createGrpThread, joinGrpThread, 
+		listRequestThread, listAllGrpsThread, acceptRequestThread;
+
+		int createUser = 0, loginCheck = 0, createGrpCheck = 0, joinGrpCheck = 0, listRequestCheck = 0, listAllCheck = 0, 
+		acceptRequestCheck = 0;
 		string usrcmd = buffer;
 		cout << "\nNew Request from client, Here: "<<usrcmd << endl;
 		int pos = usrcmd.find(" ");
@@ -666,6 +825,22 @@ int main(){
 			pthread_create(&listRequestThread, NULL, listGrpRequest, buff);
 			usleep(1000);
 			listRequestCheck = 1;
+		} else if(usrcmd == "listallgrps") {
+			string socket = to_string(newSocket);
+			memset(&buff[0], 0, sizeof(buff));
+			strcpy(buff, socket.c_str());
+			pthread_create(&listAllGrpsThread, NULL, listAllGrps, buff);
+			usleep(1000);
+			listAllCheck = 1;
+		} else if(cmdtype == "acceptrequest") {
+			string grpData = usrcmd.substr(pos);
+			string socket = to_string(newSocket);
+			string sendData = socket + grpData;
+			memset(&buff[0], 0, sizeof(buff));
+			strcpy(buff, sendData.c_str());
+			pthread_create(&acceptRequestThread, NULL, acceptGrpRequest, buff);
+			usleep(1000);
+			acceptRequestCheck = 1;
 		}
 
 		if(createUser) {
@@ -682,6 +857,12 @@ int main(){
 		}
 		if(listRequestCheck) {
 			pthread_join(listRequestThread, NULL);
+		}
+		if(listAllCheck) {
+			pthread_join(listAllGrpsThread, NULL);
+		}
+		if(acceptRequestCheck) {
+			pthread_join(acceptRequestThread, NULL);
 		}
 
 	}

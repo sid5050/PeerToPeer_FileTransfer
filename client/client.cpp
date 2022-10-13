@@ -8,7 +8,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <bits/stdc++.h>
-#define PORT 8885
+#define PORT 8880
 #define CLIENTPORT 8000
 using namespace std;
 
@@ -303,6 +303,107 @@ void *listGrpJoinRequest(void *grpData) {
 }
 
 
+
+void *acceptGrpJoinRequest(void *grpData) {
+	string Data = (char *)grpData;
+
+	string sendData = "acceptrequest " + Data;
+
+	char buff[1024];
+	memset(&buff[0], 0, sizeof(buff));
+	strcpy(buff, sendData.c_str());
+
+	//Connect to Tracker
+	int clientSocket, ret;
+	struct sockaddr_in serverAddr;
+	// char buffer[1024];
+
+	clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+	if(clientSocket < 0){
+		printf("[-]Error in connection.\n");
+		exit(1);
+	}
+	printf("[+]Client Socket is created.\n");
+
+	memset(&serverAddr, '\0', sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(PORT);
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	ret = connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+	if(ret < 0){
+		printf("[-]Error in connection.\n");
+		exit(1);
+	}
+	printf("[+]Connected to Tracker.\n");
+
+	//Send DATA to tracker
+	send(clientSocket, buff, strlen(buff), 0);
+	memset(&buff[0], 0, sizeof(buff));
+
+	if(recv(clientSocket, buff, 1024, 0) < 0){
+		printf("[-]Error in receiving data.\n");
+	}else{
+		printf("Tracker response: %s\n", buff);
+	}
+
+	pthread_exit(NULL);
+	return NULL;
+}
+
+
+
+void *listAllGrps(void *inp) {
+
+	string sendData = "listallgrps";
+
+	char buff[1024];
+	memset(&buff[0], 0, sizeof(buff));
+	strcpy(buff, sendData.c_str());
+
+	//Connect to Tracker
+	int clientSocket, ret;
+	struct sockaddr_in serverAddr;
+	// char buffer[1024];
+
+	clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+	if(clientSocket < 0){
+		printf("[-]Error in connection.\n");
+		exit(1);
+	}
+	printf("[+]Client Socket is created.\n");
+
+	memset(&serverAddr, '\0', sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(PORT);
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	ret = connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+	if(ret < 0){
+		printf("[-]Error in connection.\n");
+		exit(1);
+	}
+	printf("[+]Connected to Tracker.\n");
+
+	int cnt = 0;
+	//Send DATA to server
+	send(clientSocket, buff, strlen(buff), 0);
+	memset(&buff[0], 0, sizeof(buff));
+
+	
+	if(recv(clientSocket, buff, 1024, 0) < 0){
+		printf("[-]Error in receiving data.\n");
+	}else{
+		printf("Tracker response: %s\n", buff);
+	}
+
+	pthread_exit(NULL);
+	return NULL;
+}
+
+
+
+
 void getUserInput() {
 	cout << "\nEnter your command: " << endl;
 	string userinput;
@@ -351,6 +452,25 @@ void getUserInput() {
 			string str = grpid + " " + userId;
 			strcpy(buff, str.c_str());
 			pthread_create(&inputThread, NULL, listGrpJoinRequest, buff);
+			usleep(1000);
+		} else {
+			cout << "Login first!!" << endl;
+		}
+	} else if(userinput == "list_groups") {
+		if(loginStatus) {
+			// string str = userId;
+			// strcpy(buff, str.c_str());
+			pthread_create(&inputThread, NULL, listAllGrps, NULL);
+			usleep(1000);
+		} else {
+			cout << "Login first!!" << endl;
+		}
+	} else if(userinput.substr(0, pos) == "accept_request") {
+		if(loginStatus) {
+			string inpdata = userinput.substr(pos+1);
+			string str = inpdata + " " + userId;
+			strcpy(buff, str.c_str());
+			pthread_create(&inputThread, NULL, acceptGrpJoinRequest, buff);
 			usleep(1000);
 		} else {
 			cout << "Login first!!" << endl;
