@@ -10,7 +10,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <fstream>
-#define PORT 8880
+#define PORT 8885
 using namespace std;
 string userInfo = "userinfo.txt";
 
@@ -35,6 +35,13 @@ struct grpRequest {
 	char usrname[50];
 };
 
+struct grpMemberFileData {
+	char grpID[50];
+	char usrname[50];
+	char fileName[50];
+	char filePath[300];
+};
+
 //App users userid, passwd
 map<string, string> appUsers;
 //loggedIn users userid, passwd
@@ -51,6 +58,10 @@ set<string> availableGroups;
 map<string, vector<string>> grpMemberList;
 //List of pending request of members to join group
 map<string, vector<string>> grpRequestList;
+//List of files a grp member will have
+map<pair<string, string>, map<string, string>> grpMemberFileList;
+//List of members of a file in a group
+map<pair<string, string>, set<string>> grpFileMemberList;
 
 void *newAccount(void *userCred) {
 	string signUpData = (char *)userCred;
@@ -454,6 +465,128 @@ void *listGrpRequest(void *grpData) {
 
 
 
+void *uploadFile(void *grpData) {
+	string Data = (char *)grpData;
+	int pos = Data.find(" ");
+	int i;
+	int sockfd = stoi(Data.substr(0, pos));
+
+
+	string filePath, grpID, tmp, usrID;
+	for(i = pos+1;i < Data.size();i++) {
+		if(Data[i] == ' ') {
+			i++;
+			filePath = tmp;
+			break;
+		}
+		tmp += Data[i];
+	}
+	
+	tmp = "";
+	for(;i < Data.size();i++) {
+		if(Data[i] == ' ') {
+			i++;
+			grpID = tmp;
+			break;
+		}
+		tmp += Data[i];
+	}
+
+	tmp = "";
+	for(;i < Data.size();i++) {
+		tmp += Data[i];
+	}
+	usrID = tmp;
+
+
+	string fileName = "";
+	tmp = "";
+	for(int i = filePath.size()-1;i >= 0;i--) {
+		if(filePath[i] == '/') {
+			fileName = tmp;
+			break;
+		}
+		tmp += filePath[i];
+	}
+	reverse(fileName.begin(), fileName.end());
+	cout << "Tracker in uploadFile Function and has filePath and fileName and grpid and usrID as: " << filePath << " " 
+	<< fileName << grpID << " " << usrID << endl;
+
+	char reply[1024];
+	memset(&reply[0], 0, sizeof(reply));
+
+	if(availableGroups.find(grpID) == availableGroups.end()) {
+		string msg = "GrpID does not exist!!\n";
+		strcpy(reply, msg.c_str());
+		send(sockfd, reply, strlen(reply), 0);
+		pthread_exit(NULL);
+		return NULL;
+	}
+
+	vector<string> members = grpMemberList[grpID];
+	int flag = 0;
+	for(int i = 0;i < members.size();i++) {
+		if(members[i] == usrID) {
+			flag = 1;
+			break;	
+		}
+	}
+
+	if(!flag) {
+		string msg = usrID + " is not an part of group " + grpID + "\n";
+		strcpy(reply, msg.c_str());
+		send(sockfd, reply, strlen(reply), 0);
+		availableGroups.insert(grpID);
+		pthread_exit(NULL);
+		return NULL;
+	}
+
+	// pair<string, string> grpMember = {grpID, usrID};
+	// grpMemberFileList[grpMember][fileName] = filePath;
+	// pair<string, string> grpFile = {grpID, fileName};
+	// grpFileMemberList[grpFile].insert(usrID);
+
+	struct grpMemberFileData gmf;
+	strcpy(gmf.grpID, grpID.c_str());
+	strcpy(gmf.usrname, usrID.c_str());
+	strcpy(gmf.fileName, fileName.c_str());
+	strcpy(gmf.filePath, filePath.c_str());
+	printf("GMF-->%s --- %s --- %s --- %s\n",gmf.grpID, gmf.usrname, gmf.fileName, gmf.filePath);
+
+	FILE *datafile;
+	datafile = fopen("groupmemberfile.dat", "a");
+	if(!datafile) {
+		cout << "Invalid grouprequest file" << endl;
+		exit(1);
+	}
+	fwrite(&gmf, sizeof(struct grpMemberFileData), 1, datafile);
+	
+	if(fwrite == 0) {
+		string msg = "groupmember File Handling Error!!\n";
+		strcpy(reply, msg.c_str());
+		send(sockfd, reply, strlen(reply), 0);
+		fclose(datafile);
+		pthread_exit(NULL);
+		return NULL;
+	}
+	fclose(datafile);
+	string msg = fileName + " uploaded successfully to group " + grpID + "\n";
+	pair<string, string> grpMember = {grpID, usrID};
+	grpMemberFileList[grpMember][fileName] = filePath;
+	pair<string, string> grpFile = {grpID, fileName};
+	grpFileMemberList[grpFile].insert(usrID);
+	strcpy(reply, msg.c_str());
+	send(sockfd, reply, strlen(reply), 0);
+	pthread_exit(NULL);
+	return NULL;
+}
+
+
+
+
+
+
+
 void *acceptGrpRequest(void *grpData) {
 	string Data = (char *)grpData;
 	int pos = Data.find(" ");
@@ -711,6 +844,50 @@ void getData() {
     	cout << endl;
     }
     fclose(inpFile);
+
+
+
+    inpFile = fopen("groupmemberfile.dat", "r");
+    if(!inpFile) {
+    	cout << "grpMemberFile does not Exist!" << endl;
+    	return;
+    }
+    struct grpMemberFileData gmf;
+    while (fread(&gmf, sizeof(struct grpMemberFileData), 1, inpFile)) {
+    	string grpID = gmf.grpID;
+    	string usrID = gmf.usrname;
+    	string fileName = gmf.fileName;
+    	string filePath = gmf.filePath;
+    	pair<string, string> grpMember = {grpID, usrID};
+		grpMemberFileList[grpMember][fileName] = filePath;
+
+		pair<string, string> grpFile = {grpID, fileName};
+		grpFileMemberList[grpFile].insert(usrID);
+    }
+    cout << "\nGrp Member Files are " << endl;
+    for(auto itr = grpMemberFileList.begin(); itr != grpMemberFileList.end(); itr++) {
+    	// cout << itr->first << " " << itr->second << endl;
+    	cout << "\nGroup Name and Member Name" << itr->first.first << " " << itr->first.second << endl;
+    	map<string, string> mp = itr->second;
+    	// 
+    	for(auto itr1 : mp) {
+    		cout << itr1.first << " " << itr1.second << endl;
+    	}
+    	cout << endl;
+    }
+
+    cout << "\nGrp File Owners are " << endl;
+    for(auto itr = grpFileMemberList.begin(); itr != grpFileMemberList.end(); itr++) {
+    	// cout << itr->first << " " << itr->second << endl;
+    	cout << "\nGroup Name and File Name" << itr->first.first << " " << itr->first.second << endl;
+    	set<string> st = itr->second;
+    	// 
+    	for(auto itr1 = st.begin();itr1 != st.end();itr1++) {
+    		cout << *itr1 << endl;
+    	}
+    	cout << endl;
+    }
+    fclose(inpFile);
     cout << endl;
 }
 
@@ -766,11 +943,11 @@ int main(){
 		recv(newSocket, buffer, 1024, 0);
 
 		// cout << "Enter" << endl;
-		pthread_t createAccountThread, loginUserThread, createGrpThread, joinGrpThread, 
+		pthread_t createAccountThread, loginUserThread, createGrpThread, joinGrpThread, uploadFileThread, 
 		listRequestThread, listAllGrpsThread, acceptRequestThread;
 
 		int createUser = 0, loginCheck = 0, createGrpCheck = 0, joinGrpCheck = 0, listRequestCheck = 0, listAllCheck = 0, 
-		acceptRequestCheck = 0;
+		acceptRequestCheck = 0, uploadFileCheck = 0;
 		string usrcmd = buffer;
 		cout << "\nNew Request from client, Here: "<<usrcmd << endl;
 		int pos = usrcmd.find(" ");
@@ -841,6 +1018,15 @@ int main(){
 			pthread_create(&acceptRequestThread, NULL, acceptGrpRequest, buff);
 			usleep(1000);
 			acceptRequestCheck = 1;
+		} else if(cmdtype == "uploadfile") {
+			string grpData = usrcmd.substr(pos);
+			string socket = to_string(newSocket);
+			string sendData = socket + grpData;
+			memset(&buff[0], 0, sizeof(buff));
+			strcpy(buff, sendData.c_str());
+			pthread_create(&uploadFileThread, NULL, uploadFile, buff);
+			usleep(1000);
+			uploadFileCheck = 1;
 		}
 
 		if(createUser) {
@@ -863,6 +1049,9 @@ int main(){
 		}
 		if(acceptRequestCheck) {
 			pthread_join(acceptRequestThread, NULL);
+		}
+		if(uploadFileCheck) {
+			pthread_join(uploadFileThread, NULL);	
 		}
 
 	}
